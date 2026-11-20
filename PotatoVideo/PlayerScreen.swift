@@ -255,6 +255,9 @@ struct PlayerScreen: View {
         guard UsageWindow.isActive() else { dismiss(); return }
         guard await DeviceManagement.shared.canUse() else { dismiss(); return }
         guard !Task.isCancelled else { return }
+        UserDefaults.standard.set(video.title + " · " + episode.name, forKey: "management_current_video")
+        lastManagementPoll = Date()
+        Task { _ = await DeviceManagement.shared.canUse(force: true) }
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         let item = AVPlayerItem(url: episode.url)
         let player = AVPlayer(playerItem: item)
@@ -267,6 +270,8 @@ struct PlayerScreen: View {
     }
 
     private func stop() {
+        UserDefaults.standard.removeObject(forKey: "management_current_video")
+        Task { _ = await DeviceManagement.shared.canUse(force: true) }
         hideTask?.cancel()
         hintTask?.cancel()
         player?.pause()
@@ -276,10 +281,10 @@ struct PlayerScreen: View {
     }
 
     private func tick() {
-        if Date().timeIntervalSince(lastManagementPoll) >= 60 {
+        if Date().timeIntervalSince(lastManagementPoll) >= 600 {
             lastManagementPoll = Date()
             Task {
-                if !(await DeviceManagement.shared.canUse()) {
+                if !(await DeviceManagement.shared.canUse(force: true)) {
                     stop()
                     dismiss()
                 }

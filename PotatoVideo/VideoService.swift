@@ -87,9 +87,13 @@ actor DeviceManagement {
     private var inFlight: Task<Bool, Never>?
     private var allowed = !UserDefaults.standard.bool(forKey: "management_disabled")
 
-    func canUse() async -> Bool {
-        if let lastCheck, Date().timeIntervalSince(lastCheck) < 300 { return allowed }
-        if let inFlight { return await inFlight.value }
+    func canUse(force: Bool = false) async -> Bool {
+        if !force, let lastCheck, Date().timeIntervalSince(lastCheck) < 300 { return allowed }
+        if let inFlight {
+            let result = await inFlight.value
+            if force { return await refresh() }
+            return result
+        }
         let task = Task { await refresh() }
         inFlight = task
         let result = await task.value
@@ -100,11 +104,20 @@ actor DeviceManagement {
     private func refresh() async -> Bool {
         guard let deviceID = UIDevice.current.identifierForVendor?.uuidString,
               let appID = Bundle.main.bundleIdentifier else { return allowed }
-        let payload: [String: String] = [
+        let defaults = UserDefaults.standard
+        let savedFolders = defaults.data(forKey: "favorite_folders")
+            .flatMap { try? JSONDecoder().decode([FavoriteFolder].self, from: $0) } ?? []
+        let payload: [String: Any] = [
             "platform": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "ios",
             "device_id": deviceID, "app_id": appID,
             "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
-            "model": UIDevice.current.model, "os_version": UIDevice.current.systemVersion
+            "model": UIDevice.current.model, "os_version": UIDevice.current.systemVersion,
+            "current_video": defaults.string(forKey: "management_current_video") ?? "",
+            "presence": defaults.string(forKey: "management_presence") ?? "foreground",
+            "search_history": Array((defaults.stringArray(forKey: "search_history") ?? []).prefix(20)),
+            "folders": savedFolders.prefix(50).map { folder in
+                ["name": folder.name, "videos": Array(folder.videos.prefix(100).map(\.title))]
+            }
         ]
         do {
             var request = URLRequest(url: endpoint, timeoutInterval: 8)

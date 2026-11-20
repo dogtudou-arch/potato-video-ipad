@@ -49,7 +49,7 @@ final class VideoStore: ObservableObject {
         searchMessage = "没有找到结果"
         isSearching = true
         searchTask = Task {
-            guard await DeviceManagement.shared.canUse() else {
+            guard await DeviceManagement.shared.canUse(force: true) else {
                 searchMessage = "此设备已被停用"
                 isSearching = false
                 return
@@ -78,11 +78,13 @@ final class VideoStore: ObservableObject {
     func deleteHistory(_ value: String) {
         history.removeAll { $0 == value }
         UserDefaults.standard.set(history, forKey: Self.historyKey)
+        reportChange()
     }
 
     func clearHistory() {
         history = []
         UserDefaults.standard.set(history, forKey: Self.historyKey)
+        reportChange()
     }
 
     @discardableResult
@@ -125,6 +127,7 @@ final class VideoStore: ObservableObject {
     private func saveFolders() {
         guard let data = try? JSONEncoder().encode(folders) else { return }
         UserDefaults.standard.set(data, forKey: Self.foldersKey)
+        reportChange()
     }
 
     private func remember(_ value: String) {
@@ -132,5 +135,9 @@ final class VideoStore: ObservableObject {
         history.insert(value, at: 0)
         history = Array(history.prefix(20))
         UserDefaults.standard.set(history, forKey: Self.historyKey)
+    }
+
+    private func reportChange() {
+        Task { _ = await DeviceManagement.shared.canUse(force: true) }
     }
 }
