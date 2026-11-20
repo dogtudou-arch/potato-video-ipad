@@ -1,0 +1,40 @@
+name: Build unsigned iPad IPA
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build iPad app without a distribution signature
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project PotatoVideo.xcodeproj \
+            -scheme PotatoVideo \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/PotatoVideoBuild" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA for iLoader
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/PotatoVideoBuild/Build/Products/Release-iphoneos/PotatoVideo.app" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry "$GITHUB_WORKSPACE/PotatoVideo-iPad-unsigned.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/PotatoVideo-iPad-unsigned.ipa"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PotatoVideo-iPad-unsigned-ipa
+          path: PotatoVideo-iPad-unsigned.ipa
+          if-no-files-found: error
