@@ -313,6 +313,11 @@ struct DetailView: View {
             Button("取消", role: .cancel) { }
         }
         .task {
+            guard await DeviceManagement.shared.canUse() else {
+                isLoading = false
+                message = "此设备已被停用"
+                return
+            }
             guard UsageWindow.isActive() else {
                 isLoading = false
                 message = "网络不可用"

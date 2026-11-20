@@ -8,6 +8,7 @@ struct PotatoVideoApp: App {
         WindowGroup {
             HomeView()
                 .environmentObject(store)
+                .task { _ = await DeviceManagement.shared.canUse() }
         }
     }
 }

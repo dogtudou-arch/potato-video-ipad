@@ -42,6 +42,7 @@ struct PlayerScreen: View {
     @State private var startLevel = 0.0
     @State private var hideTask: Task<Void, Never>?
     @State private var hintTask: Task<Void, Never>?
+    @State private var lastManagementPoll = Date.distantPast
 
     private enum GestureKind: Equatable { case none, horizontal, brightness, volume }
     private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -95,7 +96,7 @@ struct PlayerScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .statusBarHidden()
-        .onAppear(perform: start)
+        .task { await start() }
         .onDisappear(perform: stop)
         .onReceive(ticker) { _ in tick() }
     }
@@ -250,8 +251,10 @@ struct PlayerScreen: View {
         }
     }
 
-    private func start() {
+    private func start() async {
         guard UsageWindow.isActive() else { dismiss(); return }
+        guard await DeviceManagement.shared.canUse() else { dismiss(); return }
+        guard !Task.isCancelled else { return }
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         let item = AVPlayerItem(url: episode.url)
         let player = AVPlayer(playerItem: item)
@@ -273,6 +276,15 @@ struct PlayerScreen: View {
     }
 
     private func tick() {
+        if Date().timeIntervalSince(lastManagementPoll) >= 60 {
+            lastManagementPoll = Date()
+            Task {
+                if !(await DeviceManagement.shared.canUse()) {
+                    stop()
+                    dismiss()
+                }
+            }
+        }
         guard UsageWindow.isActive() else {
             player?.pause()
             player?.replaceCurrentItem(with: nil)

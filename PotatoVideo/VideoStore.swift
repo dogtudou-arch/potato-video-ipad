@@ -49,6 +49,11 @@ final class VideoStore: ObservableObject {
         searchMessage = "没有找到结果"
         isSearching = true
         searchTask = Task {
+            guard await DeviceManagement.shared.canUse() else {
+                searchMessage = "此设备已被停用"
+                isSearching = false
+                return
+            }
             var failed = 0
             await withTaskGroup(of: [Video]?.self) { group in
                 for source in Source.all {

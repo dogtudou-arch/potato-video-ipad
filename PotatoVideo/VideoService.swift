@@ -80,11 +80,55 @@ enum UsageWindow {
     }
 }
 
+actor DeviceManagement {
+    static let shared = DeviceManagement()
+    private let endpoint = URL(string: "https://rui.tail735079.ts.net/potato/api/check")!
+    private var lastCheck: Date?
+    private var inFlight: Task<Bool, Never>?
+    private var allowed = !UserDefaults.standard.bool(forKey: "management_disabled")
+
+    func canUse() async -> Bool {
+        if let lastCheck, Date().timeIntervalSince(lastCheck) < 300 { return allowed }
+        if let inFlight { return await inFlight.value }
+        let task = Task { await refresh() }
+        inFlight = task
+        let result = await task.value
+        inFlight = nil
+        return result
+    }
+
+    private func refresh() async -> Bool {
+        guard let deviceID = UIDevice.current.identifierForVendor?.uuidString,
+              let appID = Bundle.main.bundleIdentifier else { return allowed }
+        let payload: [String: String] = [
+            "platform": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "ios",
+            "device_id": deviceID, "app_id": appID,
+            "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+            "model": UIDevice.current.model, "os_version": UIDevice.current.systemVersion
+        ]
+        do {
+            var request = URLRequest(url: endpoint, timeoutInterval: 8)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let active = result["active"] as? Bool else { return allowed }
+            allowed = active
+            lastCheck = Date()
+            UserDefaults.standard.set(!active, forKey: "management_disabled")
+        } catch { /* Keep the last confirmed status until the server is reachable. */ }
+        return allowed
+    }
+}
+
 enum VideoAPI {
     enum Failure: Error { case unavailable, invalidResponse }
 
     private static func fetch(_ source: Source, query: [URLQueryItem]) async throws -> [[String: Any]] {
         guard UsageWindow.isActive() else { throw Failure.unavailable }
+        guard await DeviceManagement.shared.canUse() else { throw Failure.unavailable }
         guard var components = URLComponents(string: source.url) else { throw Failure.invalidResponse }
         components.queryItems = query
         guard let url = components.url else { throw Failure.invalidResponse }
